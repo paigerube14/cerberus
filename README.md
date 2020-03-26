@@ -20,6 +20,7 @@ Set the supported components to monitor and the tunings like number of iteration
 cerberus:
     kubeconfig_path: ~/.kube/config                      # Path to kubeconfig
     watch_nodes: True                                    # Set to True for the cerberus to monitor the cluster nodes
+    watch_cluster_operators: True                        # Set to True for cerberus to monitor cluster operators. Parameter is optional, will set to True if not specified
     watch_namespaces:                                    # List of namespaces to be monitored
         -    openshift-etcd
         -    openshift-apiserver
@@ -30,17 +31,28 @@ cerberus:
         -    openshift-kube-scheduler
         -    openshift-ingress
         -    openshift-sdn
-        -    openshift-ovn-kubernetes
     cerberus_publish_status: True                        # When enabled, cerberus starts a light weight http server and publishes the status
     inspect_components: False                            # Enable it only when OpenShift client is supported to run.
                                                          # When enabled, cerberus collects logs, events and metrics of failed components
+    slack_integration: False                             # When enabled, cerberus reports status of failed iterations in the slack channel
+                                                         # SLACK_API_TOKEN ( Bot User OAuth Access Token ) and SLACK_CHANNEL ( channel to send notifications in case of failures )
+                                                         # When slack_integration is enabled, a cop can be assigned for each day. The cop of the day is tagged while reporting failures in the slack channel. Values are slack member ID's.
+    cop_slack_ID:                                        # (NOTE: Defining the cop id's is optional and when the cop slack id's are not defined, the slack_team_alias tag is used if it is set else no tag is used while reporting failures in the slack channel.)
+        Monday:
+        Tuesday:
+        Wednesday:
+        Thursday:
+        Friday:
+        Saturday:
+        Sunday:
+    slack_team_alias:                                    # The slack team alias to be tagged while reporting failures in the slack channel when no cop is assigned
 
 tunings:
     iterations: 5                                        # Iterations to loop before stopping the watch, it will be replaced with infinity when the daemon mode is enabled
     sleep_time: 60                                       # Sleep duration between each iteration
     daemon_mode: True                                    # Iterations are set to infinity which means that the cerberus will monitor the resources forever
-
 ```
+NOTE: The current implementation can monitor only one cluster from one host. It can be used to monitor multiple clusters provided multiple instances of Cerberus are launched on different hosts.
 
 #### Run
 ```
@@ -50,7 +62,6 @@ $ python3 start_cerberus.py --config <config_file_location>
 #### Run containerized version
 Assuming that the latest docker ( 17.05 or greater with multi-build support ) is intalled on the host, run:
 ```
-$ cd containers
 $ docker pull quay.io/openshift-scale/cerberus
 $ docker run --name=cerberus --net=host -v <path_to_kubeconfig>:/root/.kube/config -v <path_to_cerberus_config>:/root/cerberus/config/config.yaml -d quay.io/openshift-scale/cerberus:latest
 $ docker logs -f cerberus
@@ -58,7 +69,6 @@ $ docker logs -f cerberus
 
 Similarly, podman can be used to achieve the same:
 ```
-$ cd containers
 $ podman pull quay.io/openshift-scale/cerberus
 $ podman run --name=cerberus --net=host -v <path_to_kubeconfig>:/root/.kube/config:Z -v <path_to_cerberus_config>:/root/cerberus/config/config.yaml:Z -d quay.io/openshift-scale/cerberus:latest
 $ podman logs -f cerberus
@@ -89,7 +99,6 @@ The report is generated in the run directory and it contains the information abo
 2020-03-26 22:05:25,945 [INFO] Iteration 4: Kube scheduler status: True
 2020-03-26 22:05:25,963 [INFO] Iteration 4: OpenShift ingress status: True
 2020-03-26 22:05:26,077 [INFO] Iteration 4: OpenShift SDN status: True
-2020-03-26 22:05:26,077 [INFO] Cerberus is not monitoring openshift-ovn-kubernetes, assuming it's up and running
 2020-03-26 22:05:26,077 [INFO] HTTP requests served: 0 
 2020-03-26 22:05:26,077 [INFO] Sleeping for the specified duration: 5
 
@@ -105,19 +114,40 @@ The report is generated in the run directory and it contains the information abo
 2020-03-26 22:05:31,989 [INFO] Iteration 5: Kube scheduler status: True
 2020-03-26 22:05:32,007 [INFO] Iteration 5: OpenShift ingress status: True
 2020-03-26 22:05:32,118 [INFO] Iteration 5: OpenShift SDN status: False
-2020-03-26 22:05:32,118 [INFO] Cerberus is not monitoring openshift-ovn-kubernetes, assuming it's up and running 
 2020-03-26 22:05:32,118 [INFO] HTTP requests served: 1 
 2020-03-26 22:05:32,118 [INFO] Sleeping for the specified duration: 5
 +--------------------------------------------------Failed Components--------------------------------------------------+
 2020-03-26 22:05:37,123 [INFO] Failed openshfit sdn components: ['sdn-xmqhd']
 ```
 
+#### Slack integration
+The user has the option to enable/disable the slack integration ( disabled by default ). To use the slack integration, the user has to first create an [app](https://api.slack.com/apps?new_granular_bot_app=1) and add a bot to it on slack. SLACK_API_TOKEN and SLACK_CHANNEL environment variables have to be set. SLACK_API_TOKEN refers to Bot User OAuth Access Token and SLACK_CHANNEL refers to the slack channel ID the user wishes to receive the notifications.
+- Reports when cerberus starts monitoring a cluster in the specified slack channel.
+- Reports the component failures in the slack channel.
+- A cop can be assigned for each day of the week. The cop of the day is tagged while reporting failures in the slack channel instead of everyone. (NOTE: Defining the cop id's is optional and when the cop slack id's are not defined, the slack_team_alias tag is used if it is set else no tag is used while reporting failures in the slack channel.)
+
 #### Go or no-go signal
 When the cerberus is configured to run in the daemon mode, it will continuosly monitor the components specified, runs a simple http server at http://0.0.0.0:8080 and publishes the signal i.e True or False depending on the components status. The tools can consume the signal and act accordingly.
 
-#### Usecase
-There can be number of usecases, here are some of them:
-- We run tools to push the limits of Kubenetes/OpenShift to look at the performance and scalability and there are number of instances where the system components or nodes starts to degrade in which case the results are no longer valid but the workload generator continues to push the cluster till it breaks. The signal published by the Cerberus can be consumed by the workload generators to act on i.e stop the workload and notify us in this case.
+#### Node Problem Detector
+[node-problem-detector](https://github.com/kubernetes/node-problem-detector) aims to make various node problems visible to the upstream layers in cluster management stack
+##### Installation
+1. Create `openshift-node-problem-detector` namespace [ns.yaml](https://github.com/openshift/node-problem-detector-operator/blob/master/deploy/ns.yaml) with        `oc create -f ns.yaml`
+2. Add cluster role with `oc adm policy add-cluster-role-to-user system:node-problem-detector -z default -n openshift-node-problem-detector`
+3. Add security context constraints with `oc adm policy add-scc-to-user privileged system:serviceaccount:openshift-node-problem-detector:default
+`
+4. Edit [node-problem-detector.yaml](https://github.com/kubernetes/node-problem-detector/blob/master/deployment/node-problem-detector.yaml) to fit your environment.
+5. Edit [node-problem-detector-config.yaml](https://github.com/kubernetes/node-problem-detector/blob/master/deployment/node-problem-detector-config.yaml) to configure node-problem-detector.
+6. Create the ConfigMap with	`oc create -f node-problem-detector-config.yaml`
+7. Create the DaemonSet with `oc create -f node-problem-detector.yaml`
+
+Once installed you will see node-problem-detector pods in openshift-node-problem-detector namespace. 
+Now enable openshift-node-problem-detector in the [config.yaml](https://github.com/openshift-scale/cerberus/blob/master/config/config.yaml).
+Cerberus just monitors `KernelDeadlock` condition provided by the node problem detector as it is system critical and can hinder node performance.
+
+#### Use cases
+There can be number of use cases, here are some of them:
+- We run tools to push the limits of Kubernetes/OpenShift to look at the performance and scalability. There are a number of instances where system components or nodes start to degrade, which invalidates the results and the workload generator continues to push the cluster until it is unrecoverable.
 
 - When running chaos experiments on a kubernetes/OpenShift cluster, they can potentially break the components unrelated to the targeted components which means that the choas experiment won't be able to find it. The go/no-go signal can be used here to decide whether the cluster recovered from the failure injection as well as to decide whether to continue with the next chaos scenario.
 
@@ -137,3 +167,9 @@ Kube Scheduler           | Watches Kube scheduler                               
 Ingress                  | Watches Routers                                                                                    | :heavy_check_mark:        |
 Openshift SDN            | Watches SDN pods                                                                                   | :heavy_check_mark:        |
 OVNKubernetes            | Watches OVN pods                                                                                   | :heavy_check_mark:        |
+Cluster Operators        | Watches all Cluster Operators                                                                      | :heavy_check_mark:        |
+
+
+
+NOTE: It supports monitoring pods in any namespaces specified in the config, the watch is enabled for system components mentioned above by default as they are critical for running the operations on Kubernetes/OpenShift clusters.
+
