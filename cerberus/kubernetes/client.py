@@ -118,9 +118,6 @@ def monitor_cluster_operator(iteration, cluster_operators):
         # loop through the conditions in the status section to find the dedgraded condition
         for status_cond in operator['status']['conditions']:
             if status_cond['type'] == "Degraded":
-
-                logging.info(
-                    "Iteration %s: Operator %s: %s" % (iteration, operator['metadata']['name'], status_cond['status']))
                 # if the degraded status is not false, add it to the failed operators to return
                 if status_cond['status'] != "False":
                     failed_operators.append(operator['metadata']['name'])

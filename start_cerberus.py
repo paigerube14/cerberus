@@ -112,23 +112,23 @@ def main(cfg):
                              "to True and assuming that the nodes are ready")
                 watch_nodes_status = True
 
-                # Monitor cluster operators status
-                if watch_cluster_operators:
-                    operators_status = runcommand.invoke("kubectl get co -o yaml")
-                    status_yaml = yaml.load(operators_status, Loader=yaml.FullLoader)
-                    watch_cluster_operators_status, failed_operators = \
-                        kubecli.monitor_cluster_operator(iteration, status_yaml)
-                    logging.info("Iteration %s: Cluster Operator status: %s"
-                                 % (iteration, watch_cluster_operators_status))
-                else:
-                    logging.info("Cerberus is not monitoring cluster operators, "
-                                 "so setting the status to True and "
-                                 "assuming that the cluster operators are ready")
-                    watch_cluster_operators_status = True
+            # Monitor cluster operators status
+            if watch_cluster_operators:
+                operators_status = runcommand.invoke("kubectl get co -o yaml")
+                status_yaml = yaml.load(operators_status, Loader=yaml.FullLoader)
+                watch_cluster_operators_status, failed_operators = \
+                    kubecli.monitor_cluster_operator(iteration, status_yaml)
+                logging.info("Iteration %s: Cluster Operator status: %s"
+                             % (iteration, watch_cluster_operators_status))
+            else:
+                logging.info("Cerberus is not monitoring cluster operators, "
+                             "so setting the status to True and "
+                             "assuming that the cluster operators are ready")
+                watch_cluster_operators_status = True
 
-                if not watch_cluster_operators_status:
-                    logging.info("Failed operators")
-                    logging.info(failed_operators)
+            if not watch_cluster_operators_status:
+                logging.info("Failed operators")
+                logging.info(failed_operators)
 
             # Monitor each component in the namespace
             failed_pods_components = {}
@@ -164,7 +164,7 @@ def main(cfg):
             if inspect_components:
                 inspect.inspect_components(failed_pods_components)
 
-            cerberus_status = watch_nodes_status and watch_namespaces_status
+            cerberus_status = watch_nodes_status and watch_namespaces_status and watch_cluster_operators_status
 
             if cerberus_publish_status:
                 publish_cerberus_status(cerberus_status)
