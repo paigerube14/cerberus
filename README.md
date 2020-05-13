@@ -170,6 +170,5 @@ OVNKubernetes            | Watches OVN pods                                     
 Cluster Operators        | Watches all Cluster Operators                                                                      | :heavy_check_mark:        |
 
 
-
 NOTE: It supports monitoring pods in any namespaces specified in the config, the watch is enabled for system components mentioned above by default as they are critical for running the operations on Kubernetes/OpenShift clusters.
 
