@@ -125,3 +125,27 @@ def monitor_component(iteration, component_namespace):
     logging.info("Iteration %s: %s: %s"
                  % (iteration, component_namespace, watch_component_status))
     return watch_component_status, failed_component_pods, failed_containers
+
+
+# Monitor cluster operators
+def monitor_cluster_operator(iteration, cluster_operators):
+
+    failed_operators = []
+    for operator in cluster_operators['items']:
+
+        # loop through the conditions in the status section to find the dedgraded condition
+        for status_cond in operator['status']['conditions']:
+            if status_cond['type'] == "Degraded":
+                # if the degraded status is not false, add it to the failed operators to return
+                if status_cond['status'] != "False":
+                    failed_operators.append(operator['metadata']['name'])
+                break
+
+    # if failed operators is not 0, return a failure
+    # else return pass
+    if len(failed_operators) != 0:
+        status = False
+    else:
+        status = True
+
+    return status, failed_operators
