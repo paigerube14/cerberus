@@ -114,10 +114,9 @@ def main(cfg):
 
             # Monitor cluster operators status
             if watch_cluster_operators:
-                operators_status = runcommand.invoke("kubectl get co -o yaml")
-                status_yaml = yaml.load(operators_status, Loader=yaml.FullLoader)
+                status_yaml = kubecli.get_cluster_operators()
                 watch_cluster_operators_status, failed_operators = \
-                    kubecli.monitor_cluster_operator(iteration, status_yaml)
+                    kubecli.monitor_cluster_operator( status_yaml)
                 logging.info("Iteration %s: Cluster Operator status: %s"
                              % (iteration, watch_cluster_operators_status))
             else:

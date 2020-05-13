@@ -2,7 +2,8 @@ import logging
 from collections import defaultdict
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-
+import cerberus.invoke.command as runcommand
+import yaml
 
 # Load kubeconfig and initialize kubernetes python client
 def initialize_clients(kubeconfig_path):
@@ -127,8 +128,15 @@ def monitor_component(iteration, component_namespace):
     return watch_component_status, failed_component_pods, failed_containers
 
 
+# Get cluster operators and return yaml
+def get_cluster_operators():
+    operators_status = runcommand.invoke("kubectl get co -o yaml")
+    status_yaml = yaml.load(operators_status, Loader=yaml.FullLoader)
+    return status_yaml
+
+
 # Monitor cluster operators
-def monitor_cluster_operator(iteration, cluster_operators):
+def monitor_cluster_operator(cluster_operators):
 
     failed_operators = []
     for operator in cluster_operators['items']:
