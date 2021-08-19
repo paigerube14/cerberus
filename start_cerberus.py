@@ -248,7 +248,11 @@ def main(cfg):
                         ),
                         functools.partial(kubecli.process_routes, watch_url_routes, iter_track_time),
                         functools.partial(
-                            kubecli.monitor_namespaces_status, watch_terminating_namespaces, iteration, iter_track_time
+                            kubecli.monitor_namespaces_status,
+                            watch_namespaces,
+                            watch_terminating_namespaces,
+                            iteration,
+                            iter_track_time,
                         ),
                     ],
                 )
@@ -322,7 +326,9 @@ def main(cfg):
                         dbcli.insert(datetime.now(), time.time(), 1, "pod crash", failures, component)
                     logging.info("")
 
+                watch_teminating_ns = True
                 if terminating_namespaces:
+                    watch_teminating_ns = False
                     logging.info("Iteration %s: Terminating namespaces %s" % (iteration, str(terminating_namespaces)))
 
                 # Logging the failed checking of routes
@@ -342,6 +348,7 @@ def main(cfg):
                     and watch_cluster_operators_status
                     and server_status
                     and watch_routes_status
+                    and watch_teminating_ns
                 )
 
                 if distribution == "openshift":

@@ -68,7 +68,7 @@ def list_namespaces():
 
 # Monitor the status of all specified namespaces
 # and set the status to true or false
-def monitor_namespaces_status(watch_terminating_namespaces, iteration, iter_track_time):
+def monitor_namespaces_status(watch_namespaces, watch_terminating_namespaces, iteration, iter_track_time):
     namespaces = []
     none_terminating = True
     if watch_terminating_namespaces:
@@ -78,9 +78,10 @@ def monitor_namespaces_status(watch_terminating_namespaces, iteration, iter_trac
         except ApiException as e:
             logging.error("Exception when calling CoreV1Api->list_namespaced_pod: %s\n" % e)
         for namespace in ret.items:
-            if namespace.status.phase != "Active":
-                namespaces.append(namespace.metadata.name)
-                none_terminating = False
+            if namespace.metadata.name in watch_namespaces:
+                if namespace.status.phase != "Active":
+                    namespaces.append(namespace.metadata.name)
+                    none_terminating = False
         iter_track_time["watch_terminating_namespaces"] = time.time() - watch_nodes_start_time
         logging.info("Iteration %s: No Terminating Namespaces status: %s" % (iteration, str(none_terminating)))
     else:
