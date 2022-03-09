@@ -43,6 +43,7 @@ def get_cerberus_status():
         status = file.read()
     print("final status: " + str(status))
     if status:
+        logging.info("status if")
         return 0
 
     return 1
@@ -518,7 +519,9 @@ def main(cfg):
             pool.close()
             pool.join()
             if cerberus_publish_status:
-                sys.exit(get_cerberus_status())
+                final_status = get_cerberus_status()
+                logging.info("final number status" + str(final_status))
+                sys.exit(final_status)
     else:
         logging.error("Could not find a config at %s, please check" % (cfg))
         sys.exit(1)
