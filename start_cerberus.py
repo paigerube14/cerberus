@@ -41,11 +41,10 @@ def publish_cerberus_status(status):
 def get_cerberus_status():
     with open("/tmp/cerberus_status", "r") as file:
         status = file.read()
-    print("final status: " + str(status))
-    if status:
+    print("final status: " + str(status) + str(type(status)))
+    if status.lower() == "true":
         logging.info("status if")
         return 0
-
     return 1
 
 
