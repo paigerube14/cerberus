@@ -38,6 +38,16 @@ def publish_cerberus_status(status):
         file.write(str(status))
 
 
+def get_cerberus_status():
+    with open("/tmp/cerberus_status", "r") as file:
+        status = file.read()
+    print("final status: " + str(status))
+    if status:
+        return 0
+
+    return 1
+
+
 # Create a json file of operation timings
 def record_time(time_tracker):
     if time_tracker:
@@ -507,6 +517,8 @@ def main(cfg):
             record_time(time_tracker)
             pool.close()
             pool.join()
+            if cerberus_publish_status:
+                sys.exit(get_cerberus_status())
     else:
         logging.error("Could not find a config at %s, please check" % (cfg))
         sys.exit(1)
