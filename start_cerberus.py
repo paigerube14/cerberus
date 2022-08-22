@@ -181,7 +181,7 @@ def main(cfg):
         global pool
         pool = multiprocessing.Pool(int(cores_usage_percentage * multiprocessing.cpu_count()), init_worker)
         manager = multiprocessing.Manager()
-
+        logging.info("multiprocessing count " + str(multiprocessing.cpu_count()))
         # Track time taken for different checks in each iteration
         global time_tracker
         time_tracker = {}
