@@ -40,6 +40,7 @@ def list_continue_helper(func, *args, **keyword_args):
         while continue_string:
             ret = func(*args, **keyword_args, _continue=continue_string)
             ret_overall.append(ret)
+            logging.info("appending more in continue" + str(ret.metadata._continue))
             continue_string = ret.metadata._continue
 
     except ApiException as e:
