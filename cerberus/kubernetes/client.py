@@ -239,6 +239,7 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_patterns):
     crashed_restarted_pods = defaultdict(list)
     all_pod_info_list = get_all_pod_info(namespace)
     if all_pod_info_list is not None and len(all_pod_info_list) > 0:
+        logging.info("all pod list len " + str(len(all_pod_info_list)))
         for all_pod_info in all_pod_info_list:
             for pod_info in all_pod_info.items:
                 pod = pod_info.metadata.name
@@ -260,8 +261,7 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_patterns):
                     if pod_status.init_container_statuses is not None:
                         for container in pod_status.init_container_statuses:
                             pod_restart_count += container.restart_count
-
-                    if pod in pods_tracker:
+                    if pod in pods_tracker.keys():
                         if (
                             pods_tracker[pod]["creation_timestamp"] != pod_creation_timestamp
                             or pods_tracker[pod]["restart_count"] != pod_restart_count
