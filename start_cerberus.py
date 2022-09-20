@@ -179,6 +179,7 @@ def main(cfg):
 
         # Variables used for multiprocessing
         global pool
+        multiprocessing.set_start_method("fork")
         pool = multiprocessing.Pool(int(cores_usage_percentage * multiprocessing.cpu_count()), init_worker)
         manager = multiprocessing.Manager()
 

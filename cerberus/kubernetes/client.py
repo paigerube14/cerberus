@@ -215,9 +215,11 @@ def process_nodes(watch_nodes, iteration, iter_track_time):
 
 # Track the pods that were crashed/restarted during the sleep interval of an iteration
 def namespace_sleep_tracker(namespace, pods_tracker):
+    logging.info("namespace sleep tracker " + str(namespace) + str(len(pods_tracker)))
     crashed_restarted_pods = defaultdict(list)
     all_pod_info_list = get_all_pod_info(namespace)
     if all_pod_info_list is not None and len(all_pod_info_list) > 0:
+        logging.info("all pod list len " + str(len(all_pod_info_list)))
         for all_pod_info in all_pod_info_list:
             for pod_info in all_pod_info.items:
                 pod = pod_info.metadata.name
@@ -233,8 +235,7 @@ def namespace_sleep_tracker(namespace, pods_tracker):
                     if pod_status.init_container_statuses is not None:
                         for container in pod_status.init_container_statuses:
                             pod_restart_count += container.restart_count
-
-                    if pod in pods_tracker:
+                    if pod in pods_tracker.keys():
                         if (
                             pods_tracker[pod]["creation_timestamp"] != pod_creation_timestamp
                             or pods_tracker[pod]["restart_count"] != pod_restart_count
