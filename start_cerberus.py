@@ -192,6 +192,7 @@ def main(cfg):
             pod_names = kubecli.list_pods(namespace)
             for pod in pod_names:
                 pods_tracker[namespace][pod] = manager.dict()
+                pods_tracker[namespace][pod]["not_ready_containers"] = manager.list()
 
         # Track time taken for different checks in each iteration
         global time_tracker
