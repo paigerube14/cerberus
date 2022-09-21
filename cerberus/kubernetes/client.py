@@ -1,5 +1,7 @@
 import re
 import sys
+
+# from unicodedata import name
 import yaml
 import time
 import logging
@@ -38,7 +40,7 @@ def list_continue_helper(func, *args, **keyword_args):
         continue_string = ret.metadata._continue
 
         while continue_string:
-            ret = func(*args, **keyword_args, _continue=continue_string)
+            ret = func(*args, **keyword_args, _continue=continue_string, timeout_seconds=cmd_timeout)
             ret_overall.append(ret)
             logging.info("appending more in continue" + str(ret.metadata._continue))
             continue_string = ret.metadata._continue
@@ -215,11 +217,9 @@ def process_nodes(watch_nodes, iteration, iter_track_time):
 
 # Track the pods that were crashed/restarted during the sleep interval of an iteration
 def namespace_sleep_tracker(namespace, pods_tracker):
-    logging.info("namespace sleep tracker " + str(namespace) + str(len(pods_tracker[namespace].keys())))
     crashed_restarted_pods = defaultdict(list)
     all_pod_info_list = get_all_pod_info(namespace)
     if all_pod_info_list is not None and len(all_pod_info_list) > 0:
-        logging.info("all pod list len " + str(len(all_pod_info_list)))
         for all_pod_info in all_pod_info_list:
             for pod_info in all_pod_info.items:
                 pod = pod_info.metadata.name
@@ -262,6 +262,7 @@ def namespace_sleep_tracker(namespace, pods_tracker):
 # Monitor the status of the pods in the specified namespace
 # and set the status to true or false
 def monitor_namespace(namespace, ignore_pattern=None):
+    logging.info("monitoring namespace  " + str(namespace))
     notready_pods = set()
     match = False
     notready_containers = defaultdict(list)
@@ -279,6 +280,7 @@ def monitor_namespace(namespace, ignore_pattern=None):
                 pod_status = pod_info.status
                 pod_status_phase = pod_status.phase
                 if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
+                    logging.info("not ready pod " + str(pod))
                     notready_pods.add(pod)
                 if pod_status_phase != "Succeeded":
                     if pod_status.conditions is not None:
@@ -303,6 +305,7 @@ def monitor_namespace(namespace, ignore_pattern=None):
 
 
 def process_namespace(iteration, namespace, failed_pods_components, failed_pod_containers, ignore_pattern):
+    logging.info("process namespace ")
     watch_component_status, failed_component_pods, failed_containers = monitor_namespace(namespace, ignore_pattern)
     logging.info("Iteration %s: %s: %s" % (iteration, namespace, watch_component_status))
     if not watch_component_status:
