@@ -188,6 +188,7 @@ def main(cfg):
         pods_tracker = manager.dict()
         for namespace in watch_namespaces:
             pods_tracker[namespace] = manager.dict()
+            pods_tracker[namespace]["failed_pods"] = manager.list()
             pod_names = kubecli.list_pods(namespace)
             for pod in pod_names:
                 pods_tracker[namespace][pod] = manager.dict()

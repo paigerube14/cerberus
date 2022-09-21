@@ -261,7 +261,6 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern=None):
                             "restart_count": pod_restart_count,
                             "not_ready_containers": [],
                         }
-                        pods_tracker[namespace]["failed_pods"] = []
 
                     pod_restart_count = 0
                     if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
