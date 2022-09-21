@@ -484,7 +484,6 @@ def main(cfg):
                 logging.info("Sleeping for the specified duration: %s\n" % (sleep_time))
                 time.sleep(float(sleep_time))
 
-<<<<<<< HEAD
                 sleep_tracker_start_time = time.time()
 
                 # Track pod crashes/restarts during the sleep interval in all namespaces parallely
@@ -517,39 +516,38 @@ def main(cfg):
                             elif pod[1] == "restart":
                                 dbcli.insert(datetime.now(), time.time(), pod[2], "pod restart", [pod[0]], component)
                     logging.info("")
-=======
-                # sleep_tracker_start_time = time.time()
 
-                # # Track pod crashes/restarts during the sleep interval in all namespaces parallely
-                # multiprocessed_output = pool.starmap(
-                #     kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker))
-                # )
+                sleep_tracker_start_time = time.time()
 
-                # crashed_restarted_pods = {}
-                # for item in multiprocessed_output:
-                #     crashed_restarted_pods.update(item)
+                # Track pod crashes/restarts during the sleep interval in all namespaces parallely
+                multiprocessed_output = pool.starmap(
+                    kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker))
+                )
 
-                # iter_track_time["sleep_tracker"] = time.time() - sleep_tracker_start_time
+                crashed_restarted_pods = {}
+                for item in multiprocessed_output:
+                    crashed_restarted_pods.update(item)
 
-                # if crashed_restarted_pods:
-                #     logging.info(
-                #         "Pods that were crashed/restarted during the sleep interval of " "iteration %s" % (iteration)
-                #     )
-                #     for namespace, pods in crashed_restarted_pods.items():
-                #         distinct_pods = set(pod[0] for pod in pods)
-                #         logging.info("%s: %s" % (namespace, distinct_pods))
-                #         component = namespace.split("-")
-                #         if component[0] == "openshift":
-                #             component = "-".join(component[1:])
-                #         else:
-                #             component = "-".join(component)
-                #         for pod in pods:
-                #             if pod[1] == "crash":
-                #                 dbcli.insert(datetime.now(), time.time(), 1, "pod crash", [pod[0]], component)
-                #             elif pod[1] == "restart":
-                #                 dbcli.insert(datetime.now(), time.time(), pod[2], "pod restart", [pod[0]], component)
-                #     logging.info("")
->>>>>>> taking out end sleep tracker
+                iter_track_time["sleep_tracker"] = time.time() - sleep_tracker_start_time
+
+                if crashed_restarted_pods:
+                    logging.info(
+                        "Pods that were crashed/restarted during the sleep interval of " "iteration %s" % (iteration)
+                    )
+                    for namespace, pods in crashed_restarted_pods.items():
+                        distinct_pods = set(pod[0] for pod in pods)
+                        logging.info("%s: %s" % (namespace, distinct_pods))
+                        component = namespace.split("-")
+                        if component[0] == "openshift":
+                            component = "-".join(component[1:])
+                        else:
+                            component = "-".join(component)
+                        for pod in pods:
+                            if pod[1] == "crash":
+                                dbcli.insert(datetime.now(), time.time(), 1, "pod crash", [pod[0]], component)
+                            elif pod[1] == "restart":
+                                dbcli.insert(datetime.now(), time.time(), pod[2], "pod restart", [pod[0]], component)
+                    logging.info("")
 
                 # Capture total time taken by the iteration
                 iter_track_time["entire_iteration"] = (time.time() - iteration_start_time) - sleep_time  # noqa
