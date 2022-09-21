@@ -261,26 +261,24 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_patterns):
                     if pod_status.init_container_statuses is not None:
                         for container in pod_status.init_container_statuses:
                             pod_restart_count += container.restart_count
-                    if pod in pods_tracker.keys():
+                    if pod in pods_tracker[namespace].keys():
                         if (
-                            pods_tracker[pod]["creation_timestamp"] != pod_creation_timestamp
-                            or pods_tracker[pod]["restart_count"] != pod_restart_count
+                            pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
+                            or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
                         ):
-                            pod_restart_count = max(pod_restart_count, pods_tracker[pod]["restart_count"])
-                            if pods_tracker[pod]["creation_timestamp"] != pod_creation_timestamp:
+                            logging.info("! restart or crash")
+                            pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
+                            if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
                                 crashed_restarted_pods[namespace].append((pod, "crash"))
-                            if pods_tracker[pod]["restart_count"] != pod_restart_count:
-                                restarts = pod_restart_count - pods_tracker[pod]["restart_count"]
+                            if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
+                                restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
                                 crashed_restarted_pods[namespace].append((pod, "restart", restarts))
-                            pods_tracker[pod] = {
+                            pods_tracker[namespace][pod] = {
                                 "creation_timestamp": pod_creation_timestamp,
                                 "restart_count": pod_restart_count,
                             }
                     else:
-                        crashed_restarted_pods[namespace].append((pod, "crash"))
-                        if pod_restart_count != 0:
-                            crashed_restarted_pods[namespace].append((pod, "restart", pod_restart_count))
-                        pods_tracker[pod] = {
+                        pods_tracker[namespace][pod] = {
                             "creation_timestamp": pod_creation_timestamp,
                             "restart_count": pod_restart_count,
                         }
