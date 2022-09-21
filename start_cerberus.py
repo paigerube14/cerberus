@@ -234,6 +234,8 @@ def main(cfg):
                 # the namespaces in watch_namespaces
                 if iteration == 1:
                     pods_tracker = manager.dict()
+                    for namespace in watch_namespaces:
+                        pods_tracker[namespace] = manager.dict()
                     pool.starmap(kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker)))
 
                 # Execute the functions to check api_server_status, master_schedulable_status,
