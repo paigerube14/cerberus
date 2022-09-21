@@ -180,8 +180,17 @@ def main(cfg):
         # Variables used for multiprocessing
         global pool
         multiprocessing.set_start_method("fork")
-        pool = multiprocessing.Pool(int(cores_usage_percentage * multiprocessing.cpu_count()), init_worker)
+        logging.info("multiprocessing cpu " + str(multiprocessing.cpu_count()))
+        logging.info("multiprocessing cpu " + str(multiprocessing.cpu_count() * cores_usage_percentage))
+        pool = multiprocessing.Pool(int(cores_usage_percentage * multiprocessing.cpu_count()))
         manager = multiprocessing.Manager()
+        # way to track pods in namespaces status'
+        pods_tracker = manager.dict()
+        for namespace in watch_namespaces:
+            pods_tracker[namespace] = manager.dict()
+            pod_names = kubecli.list_pods(namespace)
+            for pod in pod_names:
+                pods_tracker[namespace][pod] = manager.dict()
 
         # Track time taken for different checks in each iteration
         global time_tracker
@@ -230,19 +239,6 @@ def main(cfg):
                     if iteration == 1:
                         slackcli.slack_report_cerberus_start(cv, weekday, watcher_slack_member_ID)
 
-                # Collect the initial creation_timestamp and restart_count of all the pods in all
-                # the namespaces in watch_namespaces
-                if iteration == 1:
-                    pods_tracker = manager.dict()
-                    sleep_namespaces_first_start_time = time.time()
-                    for namespace in watch_namespaces:
-                        pods_tracker[namespace] = manager.dict()
-                    pool.starmap(kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker)))
-                    sleep_namespaces_first_end_time = time.time()
-                    iter_track_time["set_namespace_sleep_tracker"] = (
-                        sleep_namespaces_first_end_time - sleep_namespaces_first_start_time
-                    )
-
                 # Execute the functions to check api_server_status, master_schedulable_status,
                 # watch_nodes, watch_cluster_operators parallely
                 (
@@ -284,24 +280,23 @@ def main(cfg):
                 else:
                     api_fail_count = 0
 
-                # Initialize a shared_memory of type dict to share data between different processes
-                failed_pods_components = manager.dict()
-                failed_pod_containers = manager.dict()
-
                 # Monitor all the namespaces parallely
                 watch_namespaces_start_time = time.time()
-                pool.starmap(
+                # Track pod crashes/restarts during the sleep interval in all namespaces parallely
+                multiprocessed_output = pool.starmap(
                     kubecli.process_namespace,
                     zip(
                         repeat(iteration),
                         watch_namespaces,
-                        repeat(failed_pods_components),
-                        repeat(failed_pod_containers),
                         repeat(watch_namespaces_ignore_pattern),
+                        repeat(pods_tracker),
                     ),
                 )
+                crashed_restarted_pods = {}
+                for item in multiprocessed_output:
+                    crashed_restarted_pods.update(item)
 
-                watch_namespaces_status = False if failed_pods_components else True
+                watch_namespaces_status = False if crashed_restarted_pods else True
                 iter_track_time["watch_namespaces"] = time.time() - watch_namespaces_start_time
 
                 # Check for the number of hits
@@ -335,18 +330,42 @@ def main(cfg):
 
                 if not watch_namespaces_status:
                     logging.info("Iteration %s: Failed pods and components" % (iteration))
-                    for namespace, failures in failed_pods_components.items():
-                        logging.info("%s: %s", namespace, failures)
+                    for namespace in watch_namespaces:
+                        logging.info("%s: %s", namespace, str(pods_tracker[namespace]["failed_pods"]))
+                        for pod in pods_tracker[namespace]["failed_pods"]:
 
-                        for pod, containers in failed_pod_containers[namespace].items():
-                            logging.info("Failed containers in %s: %s", pod, containers)
+                            for containers in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                logging.info("Failed containers in %s: %s", pod, containers)
 
-                        component = namespace.split("-")
-                        if component[0] == "openshift":
-                            component = "-".join(component[1:])
-                        else:
-                            component = "-".join(component)
-                        dbcli.insert(datetime.now(), time.time(), 1, "pod crash", failures, component)
+                            component = namespace.split("-")
+                            if component[0] == "openshift":
+                                component = "-".join(component[1:])
+                            else:
+                                component = "-".join(component)
+                            dbcli.insert(datetime.now(), time.time(), 1, "pod crash", pod, component)
+                        logging.info("")
+
+                if crashed_restarted_pods:
+                    logging.info(
+                        "Pods that were crashed/restarted during the sleep interval of " "iteration %s" % (iteration)
+                    )
+                    for namespace, pods in crashed_restarted_pods.items():
+
+                        if pods:
+                            distinct_pods = set(pod[0] for pod in pods)
+                            logging.info("%s: %s" % (namespace, distinct_pods))
+                            component = namespace.split("-")
+                            if component[0] == "openshift":
+                                component = "-".join(component[1:])
+                            else:
+                                component = "-".join(component)
+                            for pod in pods:
+                                if pod[1] == "crash":
+                                    dbcli.insert(datetime.now(), time.time(), 1, "pod crash", [pod[0]], component)
+                                elif pod[1] == "restart":
+                                    dbcli.insert(
+                                        datetime.now(), time.time(), pod[2], "pod restart", [pod[0]], component
+                                    )
                     logging.info("")
 
                 watch_teminating_ns = True
@@ -429,7 +448,7 @@ def main(cfg):
                             watch_cluster_operators_status,
                             failed_operators,
                             watch_namespaces_status,
-                            failed_pods_components,
+                            crashed_restarted_pods,
                             custom_checks_status,
                             custom_checks_fail_messages,
                         )
@@ -438,7 +457,7 @@ def main(cfg):
                 if distribution == "openshift" and inspect_components:
                     # Collect detailed logs for all the namespaces with failed
                     # components parallely
-                    pool.map(inspect.inspect_component, failed_pods_components.keys())
+                    pool.map(inspect.inspect_component, crashed_restarted_pods.keys())
                     logging.info("")
                 elif distribution == "kubernetes" and inspect_components:
                     logging.info("Skipping the failed components inspection as " "it's specific to OpenShift")
@@ -467,38 +486,6 @@ def main(cfg):
                 # Sleep for the specified duration
                 logging.info("Sleeping for the specified duration: %s\n" % (sleep_time))
                 time.sleep(float(sleep_time))
-
-                sleep_tracker_start_time = time.time()
-
-                # Track pod crashes/restarts during the sleep interval in all namespaces parallely
-                multiprocessed_output = pool.starmap(
-                    kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker))
-                )
-
-                crashed_restarted_pods = {}
-                for item in multiprocessed_output:
-                    crashed_restarted_pods.update(item)
-
-                iter_track_time["sleep_tracker"] = time.time() - sleep_tracker_start_time
-
-                if crashed_restarted_pods:
-                    logging.info(
-                        "Pods that were crashed/restarted during the sleep interval of " "iteration %s" % (iteration)
-                    )
-                    for namespace, pods in crashed_restarted_pods.items():
-                        distinct_pods = set(pod[0] for pod in pods)
-                        logging.info("%s: %s" % (namespace, distinct_pods))
-                        component = namespace.split("-")
-                        if component[0] == "openshift":
-                            component = "-".join(component[1:])
-                        else:
-                            component = "-".join(component)
-                        for pod in pods:
-                            if pod[1] == "crash":
-                                dbcli.insert(datetime.now(), time.time(), 1, "pod crash", [pod[0]], component)
-                            elif pod[1] == "restart":
-                                dbcli.insert(datetime.now(), time.time(), pod[2], "pod restart", [pod[0]], component)
-                    logging.info("")
 
                 # Capture total time taken by the iteration
                 iter_track_time["entire_iteration"] = (time.time() - iteration_start_time) - sleep_time  # noqa

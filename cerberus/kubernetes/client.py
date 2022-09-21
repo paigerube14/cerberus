@@ -9,7 +9,6 @@ import requests
 from collections import defaultdict
 from kubernetes import client, config
 import cerberus.invoke.command as runcommand
-from kubernetes.client.rest import ApiException
 from urllib3.exceptions import InsecureRequestWarning
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
@@ -45,10 +44,25 @@ def list_continue_helper(func, *args, **keyword_args):
             logging.info("appending more in continue" + str(ret.metadata._continue))
             continue_string = ret.metadata._continue
 
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->%s: %s\n" % (str(func), e))
 
     return ret_overall
+
+
+# List pods in a namespace in the cluster
+def list_pods(namespace):
+    pods = []
+    try:
+        ret = list_continue_helper(cli.list_namespaced_pod, namespace, pretty=True, limit=request_chunk_size)
+    except Exception as e:
+        logging.error("Exception when calling CoreV1Api->list_node: %s\n" % e)
+
+    for ret_items in ret:
+        for node in ret_items.items:
+            pods.append(node.metadata.name)
+
+    return pods
 
 
 # List nodes in the cluster
@@ -61,7 +75,7 @@ def list_nodes(label_selector=None):
             )
         else:
             ret = list_continue_helper(cli.list_node, pretty=True, limit=request_chunk_size)
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->list_node: %s\n" % e)
 
     for ret_items in ret:
@@ -90,7 +104,7 @@ def monitor_namespaces_status(watch_namespaces, watch_terminating_namespaces, it
         watch_nodes_start_time = time.time()
         try:
             ret = cli.list_namespace(pretty=True)
-        except ApiException as e:
+        except Exception as e:
             logging.error("Exception when calling CoreV1Api->list_namespace: %s\n" % e)
             sys.exit(1)
         for namespace in ret.items:
@@ -112,7 +126,7 @@ def monitor_namespaces_status(watch_namespaces, watch_terminating_namespaces, it
 def get_node_info(node):
     try:
         return cli.read_node_status(node)
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->read_node_status: %s\n" % e)
 
 
@@ -120,7 +134,7 @@ def get_node_info(node):
 def get_pod_status(pod, namespace):
     try:
         return cli.read_namespaced_pod_status(pod, namespace, pretty=True)
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->read_namespaced_pod_status: %s\n" % e)
 
 
@@ -128,7 +142,7 @@ def get_pod_status(pod, namespace):
 def get_all_nodes_info():
     try:
         return list_continue_helper(cli.list_node, limit=request_chunk_size)
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->list_node: %s\n" % e)
 
 
@@ -136,7 +150,7 @@ def get_all_nodes_info():
 def get_all_pod_info(namespace):
     try:
         ret = list_continue_helper(cli.list_namespaced_pod, namespace, pretty=True, limit=request_chunk_size)
-    except ApiException as e:
+    except Exception as e:
         logging.error("Exception when calling CoreV1Api->list_namespaced_pod: %s\n" % e)
 
     return ret
@@ -216,61 +230,14 @@ def process_nodes(watch_nodes, iteration, iter_track_time):
 
 
 # Track the pods that were crashed/restarted during the sleep interval of an iteration
-def namespace_sleep_tracker(namespace, pods_tracker):
+def namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern=None):
     crashed_restarted_pods = defaultdict(list)
     all_pod_info_list = get_all_pod_info(namespace)
     if all_pod_info_list is not None and len(all_pod_info_list) > 0:
         for all_pod_info in all_pod_info_list:
             for pod_info in all_pod_info.items:
                 pod = pod_info.metadata.name
-                pod_status = pod_info.status
-                pod_status_phase = pod_status.phase
-                pod_restart_count = 0
-
-                if pod_status_phase != "Succeeded":
-                    pod_creation_timestamp = pod_info.metadata.creation_timestamp
-                    if pod_status.container_statuses is not None:
-                        for container in pod_status.container_statuses:
-                            pod_restart_count += container.restart_count
-                    if pod_status.init_container_statuses is not None:
-                        for container in pod_status.init_container_statuses:
-                            pod_restart_count += container.restart_count
-                    if pod in pods_tracker[namespace].keys():
-                        if (
-                            pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
-                            or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
-                        ):
-                            logging.info("! restart or crash")
-                            pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
-                            if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
-                                crashed_restarted_pods[namespace].append((pod, "crash"))
-                            if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
-                                restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
-                                crashed_restarted_pods[namespace].append((pod, "restart", restarts))
-                            pods_tracker[namespace][pod] = {
-                                "creation_timestamp": pod_creation_timestamp,
-                                "restart_count": pod_restart_count,
-                            }
-                    else:
-                        pods_tracker[namespace][pod] = {
-                            "creation_timestamp": pod_creation_timestamp,
-                            "restart_count": pod_restart_count,
-                        }
-    return crashed_restarted_pods
-
-
-# Monitor the status of the pods in the specified namespace
-# and set the status to true or false
-def monitor_namespace(namespace, ignore_pattern=None):
-    logging.info("monitoring namespace  " + str(namespace))
-    notready_pods = set()
-    match = False
-    notready_containers = defaultdict(list)
-    all_pod_info_list = get_all_pod_info(namespace)
-    if all_pod_info_list is not None and len(all_pod_info_list) > 0:
-        for all_pod_info in all_pod_info_list:
-            for pod_info in all_pod_info.items:
-                pod = pod_info.metadata.name
+                match = False
                 if ignore_pattern:
                     for pattern in ignore_pattern:
                         if re.match(pattern, pod):
@@ -279,38 +246,86 @@ def monitor_namespace(namespace, ignore_pattern=None):
                     continue
                 pod_status = pod_info.status
                 pod_status_phase = pod_status.phase
-                if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
-                    logging.info("not ready pod " + str(pod))
-                    notready_pods.add(pod)
                 if pod_status_phase != "Succeeded":
-                    if pod_status.conditions is not None:
-                        for condition in pod_status.conditions:
-                            if condition.type == "Ready" and condition.status == "False":
-                                notready_pods.add(pod)
-                            if condition.type == "ContainersReady" and condition.status == "False":
-                                if pod_status.container_statuses is not None:
-                                    for container in pod_status.container_statuses:
-                                        if not container.ready:
-                                            notready_containers[pod].append(container.name)
-                                if pod_status.init_container_statuses is not None:
-                                    for container in pod_status.init_container_statuses:
-                                        if not container.ready:
-                                            notready_containers[pod].append(container.name)
-    notready_pods = list(notready_pods)
-    if notready_pods or notready_containers:
-        status = False
-    else:
-        status = True
-    return status, notready_pods, notready_containers
+                    pod_creation_timestamp = pod_info.metadata.creation_timestamp
+                    if pod not in pods_tracker[namespace].keys():
+                        pod_restart_count = 0
+                        if pod_status.container_statuses is not None:
+                            for container in pod_status.container_statuses:
+                                pod_restart_count += container.restart_count
+                        if pod_status.init_container_statuses is not None:
+                            for container in pod_status.init_container_statuses:
+                                pod_restart_count += container.restart_count
+                        pods_tracker[namespace][pod] = {
+                            "creation_timestamp": pod_creation_timestamp,
+                            "restart_count": pod_restart_count,
+                            "not_ready_containers": [],
+                        }
+                        pods_tracker[namespace]["failed_pods"] = []
+
+                    pod_restart_count = 0
+                    if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
+                        logging.info("not ready pod " + str(pod))
+                        if pod not in pods_tracker[namespace]["failed_pods"]:
+                            pods_tracker[namespace]["failed_pods"].append(pod)
+                    else:
+                        if pod in pods_tracker[namespace]["failed_pods"]:
+                            pods_tracker[namespace]["failed_pods"].remove(pod)
+                    if pod_status.container_statuses is not None:
+                        for container in pod_status.container_statuses:
+                            pod_restart_count += container.restart_count
+                            if not container.ready:
+                                if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                    pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
+                            else:
+                                if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                    pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
+                    if pod_status.init_container_statuses is not None:
+                        for container in pod_status.init_container_statuses:
+                            pod_restart_count += container.restart_count
+                            if not container.ready:
+                                if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                    pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
+                            else:
+                                if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                    pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
+
+                    if (
+                        pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
+                        or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
+                    ):
+                        logging.info("! restart or crash" + str(pod_restart_count))
+                        pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
+                        if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
+                            crashed_restarted_pods[namespace].append((pod, "crash"))
+                            logging.info(
+                                "resetting timestamp before:" + str(pods_tracker[namespace][pod]["creation_timestamp"])
+                            )
+                            curr_pod_info = pods_tracker[namespace][pod]
+                            curr_pod_info["creation_timestamp"] = pod_creation_timestamp
+                            pods_tracker[namespace][pod] = curr_pod_info
+                            logging.info(
+                                "resetting timestamp afer " + str(pods_tracker[namespace][pod]["creation_timestamp"])
+                            )
+                        if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
+                            restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
+                            crashed_restarted_pods[namespace].append((pod, "restart", restarts))
+                            logging.info(
+                                "resetting restart before:" + str(pods_tracker[namespace][pod]["restart_count"])
+                            )
+                            curr_pod_info = pods_tracker[namespace][pod]
+                            curr_pod_info["restart_count"] = restarts
+                            pods_tracker[namespace][pod] = curr_pod_info
+
+                            logging.info("resetting restart afer " + str(pods_tracker[namespace][pod]["restart_count"]))
+
+    return crashed_restarted_pods
 
 
-def process_namespace(iteration, namespace, failed_pods_components, failed_pod_containers, ignore_pattern):
-    logging.info("process namespace ")
-    watch_component_status, failed_component_pods, failed_containers = monitor_namespace(namespace, ignore_pattern)
-    logging.info("Iteration %s: %s: %s" % (iteration, namespace, watch_component_status))
-    if not watch_component_status:
-        failed_pods_components[namespace] = failed_component_pods
-        failed_pod_containers[namespace] = failed_containers
+def process_namespace(iteration, namespace, ignore_pattern, pods_tracker):
+    restarted_pods = namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern)
+    logging.info("Iteration %s: %s: %s" % (iteration, namespace, restarted_pods[namespace]))
+    return restarted_pods
 
 
 # Get cluster operators and return yaml
@@ -439,7 +454,7 @@ def get_clusterversion_string() -> str:
                 if condition["type"] == "Progressing":
                     return condition["message"]
         return ""
-    except client.exceptions.ApiException as e:
+    except client.exceptions.Exception as e:
         if e.status == 404:
             return ""
         else:
