@@ -248,7 +248,7 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern=None):
                 pod_status_phase = pod_status.phase
                 if pod_status_phase != "Succeeded":
                     pod_creation_timestamp = pod_info.metadata.creation_timestamp
-                    if len(pods_tracker[namespace][pod].keys()) < 0:
+                    if len(pods_tracker[namespace][pod].keys()) == 0:
                         pod_restart_count = 0
                         if pod_status.container_statuses is not None:
                             for container in pod_status.container_statuses:
