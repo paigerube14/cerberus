@@ -105,7 +105,7 @@ def main(cfg):
         cmd_timeout = config["tunings"].get("timeout", 60)
         request_chunk_size = config["tunings"].get("kube_api_request_chunk_size", 250)
         daemon_mode = config["tunings"].get("daemon_mode", False)
-        cores_usage_percentage = config["tunings"].get("cores_usage_percentage", 0.5)
+        # cores_usage_percentage = config["tunings"].get("cores_usage_percentage", 0.5)
         if "database" in config.keys():
             database_path = config["database"].get("database_path", "/tmp/cerberus.db")
             reuse_database = config["database"].get("reuse_database", False)
@@ -190,7 +190,7 @@ def main(cfg):
 
         # Variables used for multiprocessing
         multiprocessing.set_start_method("fork")
-        pool = multiprocessing.Pool(int(cores_usage_percentage * multiprocessing.cpu_count()), init_worker)
+        pool = multiprocessing.Pool(int(multiprocessing.cpu_count()), init_worker)
         manager = multiprocessing.Manager()
         pods_tracker = manager.dict()
 
