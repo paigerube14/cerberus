@@ -53,6 +53,21 @@ def initialize_clients(kubeconfig_path, chunk_size, timeout):
     logging.info("client set")
 
 
+# List pods in a namespace in the cluster
+def list_pods(namespace):
+    pods = []
+    try:
+        ret = list_continue_helper(cli.list_namespaced_pod, namespace, pretty=True, limit=request_chunk_size)
+    except Exception as e:
+        logging.error("Exception when calling CoreV1Api->list_node: %s\n" % e)
+
+    for ret_items in ret:
+        for node in ret_items.items:
+            pods.append(node.metadata.name)
+
+    return pods
+
+
 def list_continue_helper(func, *args, **keyword_args):
     ret_overall = []
     try:
@@ -267,22 +282,19 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_patterns):
                             pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
                             or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
                         ):
-                            logging.info("! restart or crash")
+                            logging.info("! restart or crash" + str(pod_restart_count))
                             pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
                             if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
                                 crashed_restarted_pods[namespace].append((pod, "crash"))
+                                curr_pod_info = pods_tracker[namespace][pod]
+                                curr_pod_info["creation_timestamp"] = pod_creation_timestamp
+                                pods_tracker[namespace][pod] = curr_pod_info
                             if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
                                 restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
                                 crashed_restarted_pods[namespace].append((pod, "restart", restarts))
-                            pods_tracker[namespace][pod] = {
-                                "creation_timestamp": pod_creation_timestamp,
-                                "restart_count": pod_restart_count,
-                            }
-                    else:
-                        pods_tracker[namespace][pod] = {
-                            "creation_timestamp": pod_creation_timestamp,
-                            "restart_count": pod_restart_count,
-                        }
+                                curr_pod_info = pods_tracker[namespace][pod]
+                                curr_pod_info["restart_count"] = restarts
+                                pods_tracker[namespace][pod] = curr_pod_info
     return crashed_restarted_pods
 
 
