@@ -252,7 +252,6 @@ def namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern=None):
                             "creation_timestamp" not in pods_tracker[namespace][pod].keys()
                             or "restart_count" not in pods_tracker[namespace][pod].keys()
                         ):
-                            logging.info("setting new dict")
                             pod_restart_count = 0
                             if pod_status.container_statuses is not None:
                                 for container in pod_status.container_statuses:
