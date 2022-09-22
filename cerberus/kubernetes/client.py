@@ -54,7 +54,7 @@ def initialize_clients(kubeconfig_path, chunk_size, timeout):
 
 
 # List pods in a namespace in the cluster
-def list_pods(namespace):
+def list_pods(namespace, ignore_pattern):
     pods = []
     try:
         ret = list_continue_helper(cli.list_namespaced_pod, namespace, pretty=True, limit=request_chunk_size)
@@ -63,6 +63,14 @@ def list_pods(namespace):
 
     for ret_items in ret:
         for node in ret_items.items:
+            match = False
+            if ignore_pattern:
+                for pattern in ignore_pattern:
+                    if re.match(pattern, node.metadata.name):
+                        match = True
+                        break
+            if match:
+                continue
             pods.append(node.metadata.name)
 
     return pods
@@ -79,7 +87,7 @@ def list_continue_helper(func, *args, **keyword_args):
             ret = func(*args, **keyword_args, _continue=continue_string, timeout_seconds=cmd_timeout)
             ret_overall.append(ret)
             continue_string = ret.metadata._continue
-
+            logging.info("continue")
     except ApiException as e:
         logging.error("Exception when calling CoreV1Api->%s: %s\n" % (str(func), e))
 
