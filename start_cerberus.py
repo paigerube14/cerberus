@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import os
-from shutil import ignore_patterns
 import sys
 import yaml
 import time
