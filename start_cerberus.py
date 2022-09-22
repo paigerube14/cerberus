@@ -333,9 +333,9 @@ def main(cfg):
                 if not watch_namespaces_status:
                     logging.info("Iteration %s: Failed pods and components" % (iteration))
                     for namespace in watch_namespaces:
-                        logging.info("%s: %s", namespace, str(pods_tracker[namespace]["failed_pods"]))
-                        for pod in pods_tracker[namespace]["failed_pods"]:
 
+                        for pod in pods_tracker[namespace]["failed_pods"]:
+                            logging.info("%s: %s", namespace, str(pods_tracker[namespace]["failed_pods"]))
                             for containers in pods_tracker[namespace][pod]["not_ready_containers"]:
                                 logging.info("Failed containers in %s: %s", pod, containers)
 
