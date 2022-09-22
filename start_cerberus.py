@@ -521,7 +521,8 @@ def main(cfg):
 
                 # Track pod crashes/restarts during the sleep interval in all namespaces parallely
                 multiprocessed_output = pool.starmap(
-                    kubecli.namespace_sleep_tracker, zip(watch_namespaces, repeat(pods_tracker))
+                    kubecli.namespace_sleep_tracker,
+                    zip(watch_namespaces, repeat(pods_tracker), repeat(watch_namespaces_ignore_pattern)),
                 )
 
                 crashed_restarted_pods = {}
