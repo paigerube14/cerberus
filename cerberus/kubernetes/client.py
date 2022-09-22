@@ -41,7 +41,6 @@ def list_continue_helper(func, *args, **keyword_args):
         while continue_string:
             ret = func(*args, **keyword_args, _continue=continue_string, timeout_seconds=cmd_timeout)
             ret_overall.append(ret)
-            logging.info("appending more in continue" + str(ret.metadata._continue))
             continue_string = ret.metadata._continue
 
     except Exception as e:
@@ -232,92 +231,102 @@ def process_nodes(watch_nodes, iteration, iter_track_time):
 # Track the pods that were crashed/restarted during the sleep interval of an iteration
 def namespace_sleep_tracker(namespace, pods_tracker, ignore_pattern=None):
     crashed_restarted_pods = defaultdict(list)
-    all_pod_info_list = get_all_pod_info(namespace)
-    if all_pod_info_list is not None and len(all_pod_info_list) > 0:
-        for all_pod_info in all_pod_info_list:
-            for pod_info in all_pod_info.items:
-                pod = pod_info.metadata.name
-                match = False
-                if ignore_pattern:
-                    for pattern in ignore_pattern:
-                        if re.match(pattern, pod):
-                            match = True
-                if match:
-                    continue
-                pod_status = pod_info.status
-                pod_status_phase = pod_status.phase
-                if pod_status_phase != "Succeeded":
-                    pod_creation_timestamp = pod_info.metadata.creation_timestamp
-                    if len(pods_tracker[namespace][pod].keys()) == 0:
+    try:
+        all_pod_info_list = get_all_pod_info(namespace)
+        if all_pod_info_list is not None and len(all_pod_info_list) > 0:
+            for all_pod_info in all_pod_info_list:
+                for pod_info in all_pod_info.items:
+                    pod = pod_info.metadata.name
+                    match = False
+                    if ignore_pattern:
+                        for pattern in ignore_pattern:
+                            if re.match(pattern, pod):
+                                match = True
+                    if match:
+                        continue
+                    pod_status = pod_info.status
+                    pod_status_phase = pod_status.phase
+                    if pod_status_phase != "Succeeded":
+                        pod_creation_timestamp = pod_info.metadata.creation_timestamp
+                        if (
+                            "creation_timestamp" not in pods_tracker[namespace][pod].keys()
+                            or "restart_count" not in pods_tracker[namespace][pod].keys()
+                        ):
+                            logging.info("setting new dict")
+                            pod_restart_count = 0
+                            if pod_status.container_statuses is not None:
+                                for container in pod_status.container_statuses:
+                                    pod_restart_count += container.restart_count
+                            if pod_status.init_container_statuses is not None:
+                                for container in pod_status.init_container_statuses:
+                                    pod_restart_count += container.restart_count
+                            pods_tracker[namespace][pod] = {
+                                "creation_timestamp": pod_creation_timestamp,
+                                "restart_count": pod_restart_count,
+                                "not_ready_containers": [],
+                            }
+
                         pod_restart_count = 0
+                        if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
+                            logging.info("not ready pod " + str(pod))
+                            if pod not in pods_tracker[namespace]["failed_pods"]:
+                                pods_tracker[namespace]["failed_pods"].append(pod)
+                        else:
+                            if pod in pods_tracker[namespace]["failed_pods"]:
+                                pods_tracker[namespace]["failed_pods"].remove(pod)
                         if pod_status.container_statuses is not None:
                             for container in pod_status.container_statuses:
                                 pod_restart_count += container.restart_count
+                                if not container.ready:
+                                    if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                        pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
+                                else:
+                                    if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                        pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
                         if pod_status.init_container_statuses is not None:
                             for container in pod_status.init_container_statuses:
                                 pod_restart_count += container.restart_count
-                        pods_tracker[namespace][pod] = {
-                            "creation_timestamp": pod_creation_timestamp,
-                            "restart_count": pod_restart_count,
-                            "not_ready_containers": [],
-                        }
+                                if not container.ready:
+                                    if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                        pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
+                                else:
+                                    if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
+                                        pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
 
-                    pod_restart_count = 0
-                    if pod_status_phase != "Running" and pod_status_phase != "Succeeded":
-                        logging.info("not ready pod " + str(pod))
-                        if pod not in pods_tracker[namespace]["failed_pods"]:
-                            pods_tracker[namespace]["failed_pods"].append(pod)
-                    else:
-                        if pod in pods_tracker[namespace]["failed_pods"]:
-                            pods_tracker[namespace]["failed_pods"].remove(pod)
-                    if pod_status.container_statuses is not None:
-                        for container in pod_status.container_statuses:
-                            pod_restart_count += container.restart_count
-                            if not container.ready:
-                                if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
-                                    pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
-                            else:
-                                if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
-                                    pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
-                    if pod_status.init_container_statuses is not None:
-                        for container in pod_status.init_container_statuses:
-                            pod_restart_count += container.restart_count
-                            if not container.ready:
-                                if container.name not in pods_tracker[namespace][pod]["not_ready_containers"]:
-                                    pods_tracker[namespace][pod]["not_ready_containers"].append(container.name)
-                            else:
-                                if container.name in pods_tracker[namespace][pod]["not_ready_containers"]:
-                                    pods_tracker[namespace][pod]["not_ready_containers"].remove(container.name)
+                        if (
+                            pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
+                            or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
+                        ):
+                            logging.info("! restart or crash" + str(pod_restart_count))
+                            pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
+                            if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
+                                crashed_restarted_pods[namespace].append((pod, "crash"))
+                                logging.info(
+                                    "resetting timestamp before:"
+                                    + str(pods_tracker[namespace][pod]["creation_timestamp"])
+                                )
+                                curr_pod_info = pods_tracker[namespace][pod]
+                                curr_pod_info["creation_timestamp"] = pod_creation_timestamp
+                                pods_tracker[namespace][pod] = curr_pod_info
+                                logging.info(
+                                    "resetting timestamp afer "
+                                    + str(pods_tracker[namespace][pod]["creation_timestamp"])
+                                )
+                            if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
+                                restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
+                                crashed_restarted_pods[namespace].append((pod, "restart", restarts))
+                                logging.info(
+                                    "resetting restart before:" + str(pods_tracker[namespace][pod]["restart_count"])
+                                )
+                                curr_pod_info = pods_tracker[namespace][pod]
+                                curr_pod_info["restart_count"] = restarts
+                                pods_tracker[namespace][pod] = curr_pod_info
 
-                    if (
-                        pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp
-                        or pods_tracker[namespace][pod]["restart_count"] != pod_restart_count
-                    ):
-                        logging.info("! restart or crash" + str(pod_restart_count))
-                        pod_restart_count = max(pod_restart_count, pods_tracker[namespace][pod]["restart_count"])
-                        if pods_tracker[namespace][pod]["creation_timestamp"] != pod_creation_timestamp:
-                            crashed_restarted_pods[namespace].append((pod, "crash"))
-                            logging.info(
-                                "resetting timestamp before:" + str(pods_tracker[namespace][pod]["creation_timestamp"])
-                            )
-                            curr_pod_info = pods_tracker[namespace][pod]
-                            curr_pod_info["creation_timestamp"] = pod_creation_timestamp
-                            pods_tracker[namespace][pod] = curr_pod_info
-                            logging.info(
-                                "resetting timestamp afer " + str(pods_tracker[namespace][pod]["creation_timestamp"])
-                            )
-                        if pods_tracker[namespace][pod]["restart_count"] != pod_restart_count:
-                            restarts = pod_restart_count - pods_tracker[namespace][pod]["restart_count"]
-                            crashed_restarted_pods[namespace].append((pod, "restart", restarts))
-                            logging.info(
-                                "resetting restart before:" + str(pods_tracker[namespace][pod]["restart_count"])
-                            )
-                            curr_pod_info = pods_tracker[namespace][pod]
-                            curr_pod_info["restart_count"] = restarts
-                            pods_tracker[namespace][pod] = curr_pod_info
-
-                            logging.info("resetting restart afer " + str(pods_tracker[namespace][pod]["restart_count"]))
-
+                                logging.info(
+                                    "resetting restart afer " + str(pods_tracker[namespace][pod]["restart_count"])
+                                )
+    except Exception as e:
+        logging.error("Error in sleep tracker" + str(e))
     return crashed_restarted_pods
 
 
