@@ -178,10 +178,15 @@ def get_all_nodes_info():
 # Outputs a json blob with informataion about all pods in a given namespace
 def get_all_pod_info(namespace):
     try:
-        ret = list_continue_helper(cli.list_namespaced_pod, namespace, pretty=True, limit=request_chunk_size)
+        ret = list_continue_helper(
+            cli.list_namespaced_pod,
+            namespace,
+            pretty=True,
+            limit=request_chunk_size,
+            field_selector="status.phase!=Succeeded",
+        )
     except ApiException as e:
         logging.error("Exception when calling CoreV1Api->list_namespaced_pod: %s\n" % e)
-
     return ret
 
 
