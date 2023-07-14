@@ -530,6 +530,14 @@ def main(cfg):
                 print_final_status_json(iteration, cerberus_status, 1)
                 sys.exit(1)
 
+            except KeyboardInterrupt:
+                pool.terminate()
+                pool.join()
+                logging.info("Terminating cerberus monitoring")
+                record_time(time_tracker)
+                print_final_status_json(iteration, cerberus_status, 1)
+                sys.exit(1)
+
             except Exception as e:
                 logging.info("Encountered issues in cluster. Hence, setting the go/no-go " "signal to false")
                 logging.info("Exception: %s\n" % (e))
