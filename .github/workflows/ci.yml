@@ -30,6 +30,7 @@ jobs:
         run: |
           cp ./config/kubernetes_config.yaml ./daemon_disabled_config.yaml
           sed -i "s/daemon_mode: True/daemon_mode: False/" ./daemon_disabled_config.yaml
+          sed -i "s/sleep_time: 60/sleep_time: 20/" ./daemon_disabled_config.yaml
           python3 -m coverage run -a start_cerberus.py -c ./daemon_disabled_config.yaml
       - name: Run functional test detailed data inspection with daemon disabled
         run: |

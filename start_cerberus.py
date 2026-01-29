@@ -221,6 +221,7 @@ def main(cfg):
 
         # Need to set start to cerberus_status
         cerberus_status = True
+        publish_cerberus_status(cerberus_status)
         # Loop to run the components status checks starts here
         while int(iteration) < iterations:
 
